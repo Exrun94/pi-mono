@@ -1294,6 +1294,16 @@ export interface ExtensionAPI {
 	events: EventBus;
 }
 
+/**
+ * Payload emitted on the shared `pi.events` channel `pi:ui_prompt` when an
+ * extension UI dialog requests user input.
+ */
+export interface ExtensionUIPromptEvent {
+	type: "ui_prompt";
+	method: "select" | "confirm" | "input" | "editor";
+	title: string;
+}
+
 // ============================================================================
 // Provider Registration Types
 // ============================================================================
@@ -1427,6 +1437,8 @@ export type SetLabelHandler = (entryId: string, label: string | undefined) => vo
  */
 export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
+	/** Shared event bus available to all loaded extensions. */
+	events?: EventBus;
 	/** Provider registrations queued during extension loading, processed when runner binds */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;
 	/** Throws when this extension instance is stale after runtime replacement. */

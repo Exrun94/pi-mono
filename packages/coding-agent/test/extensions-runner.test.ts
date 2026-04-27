@@ -7,9 +7,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
-import { createExtensionRuntime, discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
+import {
+	createExtensionRuntime,
+	discoverAndLoadExtensions,
+	loadExtensionFromFactory,
+} from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
-import type { ExtensionActions, ExtensionContextActions, ProviderConfig } from "../src/core/extensions/types.js";
+import type {
+	ExtensionActions,
+	ExtensionContextActions,
+	ExtensionUIContext,
+	ProviderConfig,
+} from "../src/core/extensions/types.js";
 import { KeybindingsManager, type KeyId } from "../src/core/keybindings.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
@@ -783,6 +792,100 @@ describe("ExtensionRunner", () => {
 
 			await commandContext.fork("entry-2", { position: "at" });
 			expect(fork).toHaveBeenLastCalledWith("entry-2", { position: "at" });
+		});
+	});
+
+	describe("ui_prompt events", () => {
+		const createUIContext = (): ExtensionUIContext => ({
+			select: async () => "A",
+			confirm: async () => true,
+			input: async () => "typed",
+			notify: () => {},
+			onTerminalInput: () => () => {},
+			setStatus: () => {},
+			setWorkingMessage: () => {},
+			setWorkingVisible: () => {},
+			setWorkingIndicator: () => {},
+			setHiddenThinkingLabel: () => {},
+			setWidget: () => {},
+			setFooter: () => {},
+			setHeader: () => {},
+			setTitle: () => {},
+			custom: async () => undefined as never,
+			pasteToEditor: () => {},
+			setEditorText: () => {},
+			getEditorText: () => "",
+			editor: async () => "edited",
+			addAutocompleteProvider: () => {},
+			setEditorComponent: () => {},
+			get theme() {
+				return undefined as never;
+			},
+			getAllThemes: () => [],
+			getTheme: () => undefined,
+			setTheme: () => ({ success: false, error: "not available" }),
+			getToolsExpanded: () => false,
+			setToolsExpanded: () => {},
+		});
+
+		it("emits when extension dialogs request user input", async () => {
+			const runtime = createExtensionRuntime();
+			if (!runtime.events) throw new Error("expected extension runtime event bus");
+			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRegistry);
+			const events: unknown[] = [];
+			runtime.events.on("pi:ui_prompt", (event) => events.push(event));
+
+			runner.setUIContext(createUIContext());
+			const ui = runner.getUIContext();
+
+			await ui.select("Pick one", ["A", "B"]);
+			await ui.confirm("Danger", "Allow command?");
+			await ui.input("Name", "optional");
+			await ui.editor("Edit text", "prefill");
+
+			expect(events).toEqual([
+				{ type: "ui_prompt", method: "select", title: "Pick one" },
+				{ type: "ui_prompt", method: "confirm", title: "Danger" },
+				{ type: "ui_prompt", method: "input", title: "Name" },
+				{ type: "ui_prompt", method: "editor", title: "Edit text" },
+			]);
+		});
+
+		it("exposes prompt events through pi.events", async () => {
+			const runtime = createExtensionRuntime();
+			if (!runtime.events) throw new Error("expected extension runtime event bus");
+			const events: unknown[] = [];
+			const extension = await loadExtensionFromFactory(
+				(pi) => {
+					pi.events.on("pi:ui_prompt", (event) => events.push(event));
+				},
+				tempDir,
+				runtime.events,
+				runtime,
+			);
+			const runner = new ExtensionRunner([extension], runtime, tempDir, sessionManager, modelRegistry);
+
+			runner.setUIContext(createUIContext());
+			await runner.getUIContext().confirm("Danger", "Allow command?");
+
+			expect(events).toEqual([{ type: "ui_prompt", method: "confirm", title: "Danger" }]);
+		});
+
+		it("does not emit for no-ui or already-aborted dialogs", async () => {
+			const runtime = createExtensionRuntime();
+			if (!runtime.events) throw new Error("expected extension runtime event bus");
+			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRegistry);
+			const events: unknown[] = [];
+			runtime.events.on("pi:ui_prompt", (event) => events.push(event));
+
+			await runner.getUIContext().confirm("No UI", "No notification");
+
+			const controller = new AbortController();
+			controller.abort();
+			runner.setUIContext(createUIContext());
+			await runner.getUIContext().select("Aborted", ["A"], { signal: controller.signal });
+
+			expect(events).toEqual([]);
 		});
 	});
 

@@ -70,6 +70,7 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionUIPromptEvent,
 	ExtensionWidgetOptions,
 	FindToolCallEvent,
 	FindToolResultEvent,

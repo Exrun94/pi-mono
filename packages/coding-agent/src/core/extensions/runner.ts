@@ -31,6 +31,7 @@ import type {
 	ExtensionRuntime,
 	ExtensionShortcut,
 	ExtensionUIContext,
+	ExtensionUIPromptEvent,
 	InputEvent,
 	InputEventResult,
 	InputSource,
@@ -351,7 +352,44 @@ export class ExtensionRunner {
 	}
 
 	setUIContext(uiContext?: ExtensionUIContext): void {
-		this.uiContext = uiContext ?? noOpUIContext;
+		if (!uiContext) {
+			this.uiContext = noOpUIContext;
+			return;
+		}
+
+		this.uiContext = {
+			...uiContext,
+			select: (title, options, opts) => {
+				const result = uiContext.select(title, options, opts);
+				if (!opts?.signal?.aborted) {
+					this.emitUIPrompt({ type: "ui_prompt", method: "select", title });
+				}
+				return result;
+			},
+			confirm: (title, message, opts) => {
+				const result = uiContext.confirm(title, message, opts);
+				if (!opts?.signal?.aborted) {
+					this.emitUIPrompt({ type: "ui_prompt", method: "confirm", title });
+				}
+				return result;
+			},
+			input: (title, placeholder, opts) => {
+				const result = uiContext.input(title, placeholder, opts);
+				if (!opts?.signal?.aborted) {
+					this.emitUIPrompt({ type: "ui_prompt", method: "input", title });
+				}
+				return result;
+			},
+			editor: (title, prefill) => {
+				const result = uiContext.editor(title, prefill);
+				this.emitUIPrompt({ type: "ui_prompt", method: "editor", title });
+				return result;
+			},
+		};
+	}
+
+	private emitUIPrompt(event: ExtensionUIPromptEvent): void {
+		this.runtime.events?.emit("pi:ui_prompt", event);
 	}
 
 	getUIContext(): ExtensionUIContext {
